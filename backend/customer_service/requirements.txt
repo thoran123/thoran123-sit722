@@ -2,6 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 psycopg2-binary
-pydantic[email]pytest==7.4.0
+pydantic[email]
+pytest==7.4.0
 pytest-cov==4.1.0
 httpx==0.27.0
