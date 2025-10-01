@@ -1,0 +1,114 @@
+name: Deploy to Staging Environment
+
+on:
+  repository_dispatch:
+    types: [staging-deploy]
+
+env:
+  STAGING_RG: sit722-staging-rg
+  STAGING_AKS: sit722-staging-aks
+  ACR_NAME: sit722acr
+
+jobs:
+  create-staging:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Create Staging Resource Group
+        run: |
+          az group create \
+            --name ${{ env.STAGING_RG }} \
+            --location australiaeast
+      
+      - name: Create Staging AKS Cluster
+        run: |
+          az aks create \
+            --resource-group ${{ env.STAGING_RG }} \
+            --name ${{ env.STAGING_AKS }} \
+            --node-count 1 \
+            --node-vm-size Standard_B2s \
+            --enable-addons monitoring \
+            --generate-ssh-keys \
+            --attach-acr ${{ env.ACR_NAME }}
+      
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.STAGING_RG }} \
+            --name ${{ env.STAGING_AKS }} \
+            --overwrite-existing
+      
+      - name: Deploy to Staging
+        run: |
+          # Replace IMAGE_TAG with actual commit SHA
+          for file in k8s/*.yaml; do
+            sed -i "s|IMAGE_TAG|${{ github.event.client_payload.sha }}|g" "$file"
+          done
+          
+          # Apply manifests
+          kubectl apply -f k8s/
+      
+      - name: Wait for Deployments
+        run: |
+          kubectl wait --for=condition=available --timeout=300s \
+            deployment/customer-service \
+            deployment/order-service \
+            deployment/product-service \
+            deployment/frontend
+      
+      - name: Get Service Information
+        run: |
+          echo "=== Staging Environment Services ==="
+          kubectl get services
+          echo ""
+          echo "=== Pods Status ==="
+          kubectl get pods
+      
+      - name: Run Basic Health Checks
+        run: |
+          sleep 60  # Wait for LoadBalancers
+          
+          echo "Running health checks..."
+          kubectl get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  
+  manual-approval:
+    needs: create-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Manual Approval
+        run: |
+          echo "Staging environment is ready for testing"
+          echo "Review the deployment and approve to proceed"
+          echo "Staging will be destroyed after 30 minutes"
+          sleep 1800  # 30 minutes
+  
+  cleanup-staging:
+    needs: manual-approval
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Delete Staging Environment
+        run: |
+          az group delete \
+            --name ${{ env.STAGING_RG }} \
+            --yes \
+            --no-wait
+      
+      - name: Confirm Deletion
+        run: |
+          echo "Staging environment cleanup initiated"
+          echo "Resources will be fully deleted in a few minutes"

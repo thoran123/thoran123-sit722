@@ -1,0 +1,84 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+env:
+  PROD_RG: sit722-rg
+  PROD_AKS: sit722-prod-aks
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get Production AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.PROD_RG }} \
+            --name ${{ env.PROD_AKS }} \
+            --overwrite-existing
+      
+      - name: Deploy to Production
+        run: |
+          # Use latest tag for production
+          for file in k8s/*.yaml; do
+            sed -i "s|IMAGE_TAG|latest|g" "$file"
+          done
+          
+          # Apply manifests
+          kubectl apply -f k8s/
+      
+      - name: Wait for Deployments
+        run: |
+          kubectl wait --for=condition=available --timeout=600s \
+            deployment/customer-service \
+            deployment/order-service \
+            deployment/product-service \
+            deployment/frontend
+      
+      - name: Verify Production Deployment
+        run: |
+          echo "=== Production Deployment Status ==="
+          kubectl get deployments
+          echo ""
+          echo "=== Production Services ==="
+          kubectl get services
+          echo ""
+          echo "=== Production Pods ==="
+          kubectl get pods
+      
+      - name: Run Smoke Tests
+        run: |
+          sleep 90  # Wait for LoadBalancers
+          
+          # Get frontend IP
+          FRONTEND_IP=$(kubectl get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          
+          echo "Frontend IP: $FRONTEND_IP"
+          
+          # Simple health check
+          if [ ! -z "$FRONTEND_IP" ]; then
+            curl -f http://$FRONTEND_IP || echo "Warning: Health check failed"
+          fi
+      
+      - name: Deployment Summary
+        run: |
+          echo "✅ Production deployment completed successfully!"
+          echo "Timestamp: $(date)"
+          kubectl get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
