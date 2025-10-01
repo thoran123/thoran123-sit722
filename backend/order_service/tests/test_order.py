@@ -1,11 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-
-# Mock the database before importing app
-with patch('app.db.engine'):
-    with patch('app.db.SessionLocal'):
-        from app.main import app
+from app.main import app
 
 @pytest.fixture
 def client():
