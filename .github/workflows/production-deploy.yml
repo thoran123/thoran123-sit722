@@ -11,7 +11,7 @@ on:
 
 env:
   PROD_RG: sit722-rg
-  PROD_AKS: sit722-aks-prod
+  PROD_AKS: sit722-prod-aks
 
 jobs:
   deploy-production:
