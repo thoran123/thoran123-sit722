@@ -9,36 +9,10 @@ jobs:
   test-and-build:
     runs-on: ubuntu-latest
     
-    # Add PostgreSQL service
-    services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-    
-    # Set environment variables for database connection
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: test_db
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      # Setup Python
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
@@ -47,25 +21,21 @@ jobs:
       - name: Test Customer Service
         working-directory: backend/customer_service
         run: |
-          pip install -r requirements.txt
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/ -v --cov=. --cov-report=term-missing || true
+          pip install pytest
+          pytest tests/ -v
       
       - name: Test Order Service
         working-directory: backend/order_service
         run: |
-          pip install -r requirements.txt
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/ -v --cov=. --cov-report=term-missing || true
+          pip install pytest
+          pytest tests/ -v
       
       - name: Test Product Service
         working-directory: backend/product_service
         run: |
-          pip install -r requirements.txt
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/ -v --cov=. --cov-report=term-missing || true
+          pip install pytest
+          pytest tests/ -v
       
-      # Build and Push Images
       - name: Login to Azure Container Registry
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
@@ -102,11 +72,3 @@ jobs:
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest .
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest
-      
-      - name: Trigger Staging Deployment
-        if: success()
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: staging-deploy
-          client-payload: '{"sha": "${{ github.sha }}"}'
