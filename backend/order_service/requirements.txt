@@ -4,4 +4,6 @@ sqlalchemy
 psycopg2-binary
 pydantic
 aio-pika
-httpx
+httpxpytest==7.4.0
+pytest-cov==4.1.0
+httpx==0.27.0
